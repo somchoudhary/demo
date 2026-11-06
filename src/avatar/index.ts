@@ -1,0 +1,5 @@
+export { BASE_AVATAR, ASSET_PROVENANCE } from './baseAvatar'
+export { GltfAvatarRepository, avatarRepository } from './gltfAvatarRepository'
+export { AvatarLoadError } from './errors'
+export { useAvatar } from './useAvatar'
+export type { AvatarSource, AvatarRepository, AvatarDiagnostics, AvatarViewerState, LoadedAvatar } from './types'
