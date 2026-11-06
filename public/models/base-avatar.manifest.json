@@ -1,0 +1,91 @@
+{
+  "id": "mpfb-base-01",
+  "name": "Base avatar 01",
+  "url": "/models/base-avatar.glb",
+  "format": "glTF 2.0 binary",
+  "license": "CC0-1.0",
+  "licenseUrl": "/models/CC0-LICENSE.txt",
+  "attribution": "MPFB / MakeHuman reference avatar, created by Mika Suominen (met4citizen).",
+  "source": {
+    "repository": "met4citizen/TalkingHead",
+    "commit": "1563de184c19b310de4b636664d5835e2c74dbba",
+    "path": "avatars/mpfb.glb",
+    "blob": "cd2ebbe1fe8bcbf3d5b2dfbf1262a7f76814e68f",
+    "bytes": 36815920,
+    "sha256": "63c645a2a863b9972e9a9c2ed576a1de4c390b8475508e1473e69c87a3ee299c",
+    "license": "CC0-1.0",
+    "url": "https://github.com/met4citizen/TalkingHead/blob/1563de184c19b310de4b636664d5835e2c74dbba/avatars/mpfb.glb",
+    "downloadUrl": "https://api.github.com/repos/met4citizen/TalkingHead/git/blobs/cd2ebbe1fe8bcbf3d5b2dfbf1262a7f76814e68f",
+    "licenseStatement": "- Example avatar \"mpfb.glb\" was created using [Blender](https://www.blender.org/) and [MPFB](https://static.makehumancommunity.org/mpfb.html) Blender extension. The avatar is licensed under [CC0](https://creativecommons.org/public-domain/cc0/)."
+  },
+  "bytes": 4549152,
+  "sha256": "5d89fbb4be9ed6dedcd66d799ae7e3ee7d7f78f0476c3c4eb1a7786c5154edff",
+  "triangles": 83686,
+  "meshes": 8,
+  "joints": 67,
+  "textures": [
+    {
+      "name": "young_lightskinned_female_diffuse2",
+      "mimeType": "image/webp",
+      "size": [
+        2048,
+        2048
+      ]
+    },
+    {
+      "name": "female_casualsuit01_normal",
+      "mimeType": "image/webp",
+      "size": [
+        2048,
+        2048
+      ]
+    },
+    {
+      "name": "female_casualsuit01_diffuse",
+      "mimeType": "image/webp",
+      "size": [
+        2048,
+        2048
+      ]
+    },
+    {
+      "name": "brown_eye",
+      "mimeType": "image/webp",
+      "size": [
+        1024,
+        1024
+      ]
+    },
+    {
+      "name": "ponytail01_diffuse",
+      "mimeType": "image/webp",
+      "size": [
+        2048,
+        2048
+      ]
+    },
+    {
+      "name": "teeth",
+      "mimeType": "image/webp",
+      "size": [
+        2048,
+        2048
+      ]
+    },
+    {
+      "name": "tongue01_diffuse",
+      "mimeType": "image/webp",
+      "size": [
+        1024,
+        1024
+      ]
+    }
+  ],
+  "materials": 8,
+  "morphTargets": 155,
+  "optimizations": [
+    "WebP textures (quality 92, maximum 2048 × 2048)",
+    "Meshopt compression; no mesh simplification"
+  ],
+  "personalization": "Base asset only. No user likeness, photo reconstruction or body measurements have been applied."
+}
