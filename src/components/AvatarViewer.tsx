@@ -91,6 +91,7 @@ export function AvatarViewer({ source = BASE_AVATAR, repository = avatarReposito
       className={`avatar-viewer ${className}`}
       aria-label="Avatar viewer"
       data-status={error ? 'error' : ready ? 'ready' : 'loading'}
+      data-source-kind={source.kind}
       data-view={view}
       data-rotating={rotating}
       data-zoom={zoom}
