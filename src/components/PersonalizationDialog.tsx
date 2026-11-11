@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { FormEvent, RefObject } from 'react'
-import { ArrowUpRight, Check, Download, FileText, FileUp, ImagePlus, LoaderCircle, LockKeyhole, ScanFace, ShieldCheck, TriangleAlert, X } from 'lucide-react'
+import { ArrowUpRight, Check, FileUp, ImagePlus, LoaderCircle, LockKeyhole, ScanFace, ShieldCheck, TriangleAlert, X } from 'lucide-react'
 import { generatePersonalAvatar } from '../personalization/generateAvatar'
 import { MEASUREMENT_FIELDS, validateMeasurements } from '../personalization/measurements'
 import { DEFAULT_ALIGNMENT, DEFAULT_MEASUREMENTS } from '../personalization/types'
@@ -23,8 +23,10 @@ const ALIGNMENT_FIELDS: { key: keyof ScanAlignment; label: string; step: number;
 
 export function PersonalizationDialog({ dialogRef, onClose, onGenerated }: Props) {
   const [scanFile, setScanFile] = useState<File | null>(null)
-  const [photo, setPhoto] = useState<File | null>(null)
-  const [photoUrl, setPhotoUrl] = useState<string | null>(null)
+  const [frontPhoto, setFrontPhoto] = useState<File | null>(null)
+  const [sidePhoto, setSidePhoto] = useState<File | null>(null)
+  const [frontPhotoUrl, setFrontPhotoUrl] = useState<string | null>(null)
+  const [sidePhotoUrl, setSidePhotoUrl] = useState<string | null>(null)
   const [measurements, setMeasurements] = useState<BodyMeasurements>(DEFAULT_MEASUREMENTS)
   const [alignment, setAlignment] = useState<ScanAlignment>(DEFAULT_ALIGNMENT)
   const [busy, setBusy] = useState(false)
@@ -33,12 +35,17 @@ export function PersonalizationDialog({ dialogRef, onClose, onGenerated }: Props
   const [result, setResult] = useState<GeneratedAvatar | null>(null)
   const controller = useRef<AbortController | null>(null)
 
-  useEffect(() => () => { if (photoUrl) URL.revokeObjectURL(photoUrl) }, [photoUrl])
+  useEffect(() => () => {
+    if (frontPhotoUrl) URL.revokeObjectURL(frontPhotoUrl)
+    if (sidePhotoUrl) URL.revokeObjectURL(sidePhotoUrl)
+  }, [frontPhotoUrl, sidePhotoUrl])
   useEffect(() => () => { controller.current?.abort() }, [])
 
-  const choosePhoto = (file: File | null) => {
-    setPhoto(file)
-    setPhotoUrl((previous) => {
+  const choosePhoto = (view: 'front' | 'side', file: File | null) => {
+    const setFile = view === 'front' ? setFrontPhoto : setSidePhoto
+    const setUrl = view === 'front' ? setFrontPhotoUrl : setSidePhotoUrl
+    setFile(file)
+    setUrl((previous) => {
       if (previous) URL.revokeObjectURL(previous)
       return file ? URL.createObjectURL(file) : null
     })
@@ -52,8 +59,8 @@ export function PersonalizationDialog({ dialogRef, onClose, onGenerated }: Props
   const submit = async (event: FormEvent) => {
     event.preventDefault()
     setError(null)
-    if (!scanFile) {
-      setError('Upload a 3D head scan first. A photo alone cannot guarantee exact face geometry.')
+    if (!scanFile && (!frontPhoto || !sidePhoto)) {
+      setError('Upload both a front-facing photo and a side-profile photo. A true two-view reconstruction model must be installed before photo-only generation can run; this build will not fake a fitted face with a photo-textured sphere.')
       return
     }
     const measurementErrors = validateMeasurements(measurements)
@@ -66,9 +73,12 @@ export function PersonalizationDialog({ dialogRef, onClose, onGenerated }: Props
     setProgress({ stage: 'reading-inputs', message: 'Starting local generation…' })
     controller.current = new AbortController()
     try {
+      if (!scanFile) {
+        throw new Error('Both photos were received, but the local 3D face-reconstruction engine is not bundled in this project yet. I have intentionally disabled the old pasted-photo head so it cannot be mistaken for a realistic reconstruction. Import a fitted head scan for now, or add a licensed local reconstruction engine to enable photo-only generation.')
+      }
       const avatar = await generatePersonalAvatar({
         scanFile,
-        referencePhoto: photo,
+        referencePhoto: frontPhoto,
         measurements,
         alignment,
         signal: controller.current.signal,
@@ -89,7 +99,8 @@ export function PersonalizationDialog({ dialogRef, onClose, onGenerated }: Props
     setResult(null)
     setError(null)
     setScanFile(null)
-    choosePhoto(null)
+    choosePhoto('front', null)
+    choosePhoto('side', null)
     setMeasurements(DEFAULT_MEASUREMENTS)
     setAlignment(DEFAULT_ALIGNMENT)
   }
@@ -110,29 +121,26 @@ export function PersonalizationDialog({ dialogRef, onClose, onGenerated }: Props
         <div className="dialog-icon"><ScanFace size={22} /></div>
         <button className="icon-button" aria-label="Close personalization" disabled={busy} onClick={close}><X size={20} /></button>
       </div>
-      <p className="eyebrow">LOCAL · EXACT-FACE WORKFLOW</p>
+      <p className="eyebrow">LOCAL · PHOTO-BASED AVATAR</p>
       <h2 id="personalization-title">Create your own avatar</h2>
       <p className="dialog-intro">
-        Your face comes from a supplied 3D head scan. The body is fitted to your measurements. Everything runs in this browser; no file is uploaded to a reconstruction service.
+        Upload front and side photos for the intended two-view face reconstruction workflow, or import an existing 3D head scan. Body proportions are adjusted using your measurements. Processing stays in this browser.
       </p>
 
       {result ? (
         <div className="generation-success" role="status">
-          <div className="success-badge"><LockKeyhole size={18} /> Face lock verified</div>
+          <div className="success-badge"><LockKeyhole size={18} /> Head geometry preserved</div>
           <p>
-            The exported GLB was re-imported and every scan vertex hash matched. Local face vertex delta: <strong>0 m</strong>.
+            Your 3D model has been generated and is ready to view in the studio. The generated head mesh was preserved during assembly. The imported scan supplies the head geometry; uploaded photos are references only.
           </p>
           <dl className="asset-facts">
-            <div><dt>Scan</dt><dd>{result.report.scanFileName}</dd></div>
-            <div><dt>Face meshes</dt><dd>{result.report.faceLock.meshCount} · {result.report.faceLock.vertexCount.toLocaleString()} vertices</dd></div>
-            <div><dt>Export</dt><dd>{(result.report.exportBytes / 1024 / 1024).toFixed(2)} MB GLB</dd></div>
-            <div><dt>Reference photo</dt><dd>{result.report.referencePhoto ? 'Stored as reference only; not used for geometry' : 'Not supplied'}</dd></div>
+            <div><dt>Head source</dt><dd>{result.report.scanFileName}</dd></div>
+            <div><dt>Head meshes</dt><dd>{result.report.faceLock.meshCount} · {result.report.faceLock.vertexCount.toLocaleString()} vertices</dd></div>
+            <div><dt>Photo input</dt><dd>{result.report.referencePhoto ? 'Front view stored as reference' : 'Not supplied'}</dd></div>
           </dl>
-          <div className="checksum-block"><span>FACE POSITION SHA-256</span><code>{result.report.faceLock.positionSha256}</code></div>
+          <div className="checksum-block"><span>HEAD MESH POSITION SHA-256</span><code>{result.report.faceLock.positionSha256}</code></div>
           <div className="dialog-actions">
             <button className="button button-primary" onClick={close}><Check size={15} /> View in studio</button>
-            <a className="button button-secondary" href={result.blobUrl} download={result.fileName}><Download size={15} /> Download GLB</a>
-            <a className="button button-secondary" href={`data:application/json;charset=utf-8,${encodeURIComponent(JSON.stringify(result.report, null, 2))}`} download="face-lock-report.json"><FileText size={15} /> Report</a>
             <button className="text-link" onClick={reset}>Create another</button>
           </div>
         </div>
@@ -142,17 +150,23 @@ export function PersonalizationDialog({ dialogRef, onClose, onGenerated }: Props
             <label className={`upload-card ${scanFile ? 'has-file' : ''}`}>
               <input type="file" accept=".glb,.gltf,model/gltf-binary,model/gltf+json" disabled={busy} onChange={(event) => setScanFile(event.target.files?.[0] ?? null)} />
               <FileUp size={20} />
-              <strong>3D head scan <span className="required">required</span></strong>
-              <span>{scanFile ? scanFile.name : 'Self-contained GLB/glTF · Y-up · meters · trimmed at neck'}</span>
+              <strong>3D head scan <span className="optional">optional</span></strong>
+              <span>{scanFile ? scanFile.name : 'Optional: self-contained GLB/glTF · Y-up · meters'}</span>
             </label>
-            <label className={`upload-card ${photo ? 'has-file' : ''}`}>
-              <input type="file" accept="image/png,image/jpeg,image/webp" disabled={busy} onChange={(event) => choosePhoto(event.target.files?.[0] ?? null)} />
-              {photoUrl ? <img className="photo-preview" src={photoUrl} alt="Reference photo preview" /> : <ImagePlus size={20} />}
-              <strong>Reference photo <span className="optional">optional</span></strong>
-              <span>{photo ? photo.name : 'Visual reference only. It is not used to deform or reconstruct the face.'}</span>
+            <label className={`upload-card ${frontPhoto ? 'has-file' : ''}`}>
+              <input type="file" accept="image/png,image/jpeg,image/webp" disabled={busy} onChange={(event) => choosePhoto('front', event.target.files?.[0] ?? null)} />
+              {frontPhotoUrl ? <img className="photo-preview" src={frontPhotoUrl} alt="Front-view face photo preview" /> : <ImagePlus size={20} />}
+              <strong>Front photo <span className="required">required</span></strong>
+              <span>{frontPhoto ? frontPhoto.name : 'Face straight toward camera; neutral expression; minimum 320 × 320 px'}</span>
+            </label>
+            <label className={`upload-card ${sidePhoto ? 'has-file' : ''}`}>
+              <input type="file" accept="image/png,image/jpeg,image/webp" disabled={busy} onChange={(event) => choosePhoto('side', event.target.files?.[0] ?? null)} />
+              {sidePhotoUrl ? <img className="photo-preview" src={sidePhotoUrl} alt="Side-profile face photo preview" /> : <ImagePlus size={20} />}
+              <strong>Side profile <span className="required">required</span></strong>
+              <span>{sidePhoto ? sidePhoto.name : 'True 90° profile; show forehead, nose, lips and chin'}</span>
             </label>
           </div>
-          <p className="sample-link">No scan handy? <a href="/samples/sample-head-scan.glb" download>Download the CC0 demo scan</a> to test the pipeline. It is not a user likeness.</p>
+          <p className="sample-link">Use two separate, sharp images of the same person: one straight-on and one exact side profile. Keep hair away from the face, use even lighting, and avoid filters. Photo-only reconstruction remains disabled until a compatible, properly licensed local model is installed; the old sphere-based photo trick has been removed from the generation path.</p>
 
           <fieldset disabled={busy}>
             <legend>Body measurements <span>centimeters</span></legend>
@@ -193,18 +207,18 @@ export function PersonalizationDialog({ dialogRef, onClose, onGenerated }: Props
                 </label>
               ))}
             </div>
-            <p>These controls move/orient the whole scan. They never edit individual face vertices.</p>
+            <p>These controls move/orient the generated or imported head as a whole. They do not reconstruct missing facial depth.</p>
           </details>
 
-          <div className="privacy-note"><ShieldCheck size={16} /><span>Local processing. The scan and photo stay in this tab. The generated GLB is created on your device.</span></div>
+          <div className="privacy-note"><ShieldCheck size={16} /><span>Local-only workflow. Both photos remain in this browser. A genuine two-view reconstruction engine is not bundled yet, so photo-only generation is deliberately blocked rather than producing a misleading pasted-on head.</span></div>
 
           {error && <div className="form-error" role="alert"><TriangleAlert size={16} /><span>{error}</span></div>}
           {progress && <div className="generation-progress" role="status"><LoaderCircle size={16} className="spin" /><span>{progress.message}</span></div>}
 
           <div className="dialog-actions">
-            <button className="button button-primary" type="submit" disabled={busy || !scanFile}>
+            <button className="button button-primary" type="submit" disabled={busy || (!scanFile && (!frontPhoto || !sidePhoto))}>
               {busy ? <LoaderCircle size={15} className="spin" /> : <LockKeyhole size={15} />}
-              {busy ? 'Generating locally…' : 'Generate exact-face avatar'}
+              {busy ? 'Generating locally…' : scanFile ? 'Generate 3D avatar' : 'Photo engine not installed'}
             </button>
             <a className="text-link" href="/samples/README.txt" target="_blank" rel="noreferrer">Sample provenance <ArrowUpRight size={13} /></a>
           </div>

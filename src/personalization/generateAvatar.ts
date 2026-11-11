@@ -24,6 +24,7 @@ import type { BodyMeasurements, GeneratedAvatar, GenerationProgress, Personaliza
 export interface GenerateAvatarInput {
   scanFile: File
   referencePhoto?: File | null
+  photoGeneratedHead?: boolean
   measurements: BodyMeasurements
   alignment: ScanAlignment
   signal?: AbortSignal
@@ -61,7 +62,7 @@ export async function generatePersonalAvatar(input: GenerateAvatarInput): Promis
   if (measurementErrors.length) throw new Error(measurementErrors.join(' '))
   const alignmentErrors = validateAlignment(input.alignment)
   if (alignmentErrors.length) throw new Error(alignmentErrors.join(' '))
-  if (!input.scanFile) throw new Error('A 3D head scan is required. A photo alone cannot preserve exact face geometry.')
+  if (!input.scanFile) throw new Error('A head model could not be generated from the supplied photo.')
   if (input.scanFile.size > MAX_SCAN_BYTES) throw new Error('Head scan is larger than 80 MB. Export a decimated GLB and try again.')
   const lowerName = input.scanFile.name.toLowerCase()
   if (!lowerName.endsWith('.glb') && !lowerName.endsWith('.gltf')) throw new Error('Head scan must be a self-contained .glb or .gltf file.')
@@ -84,14 +85,14 @@ export async function generatePersonalAvatar(input: GenerateAvatarInput): Promis
     let referencePhoto: PersonalizationReport['referencePhoto']
     if (input.referencePhoto) {
       const photoBuffer = await input.referencePhoto.arrayBuffer()
-      referencePhoto = { fileName: input.referencePhoto.name, sha256: await sha256Hex(photoBuffer), usedForGeometry: false }
+      referencePhoto = { fileName: input.referencePhoto.name, sha256: await sha256Hex(photoBuffer), usedForGeometry: Boolean(input.photoGeneratedHead) }
     }
 
     report(input, 'loading-base', 'Loading the licensed base human.')
     base = await avatarRepository.load(BASE_AVATAR, { signal: input.signal })
     throwIfAborted(input.signal)
 
-    report(input, 'validating-scan', 'Validating the supplied head scan.')
+    report(input, 'validating-scan', 'Validating the imported or photo-generated head mesh.')
     const localOnlyManager = new LoadingManager()
     localOnlyManager.setURLModifier((url) => {
       if (url.startsWith('data:') || url.startsWith('blob:')) return url
@@ -182,7 +183,7 @@ export async function generatePersonalAvatar(input: GenerateAvatarInput): Promis
       assembled.add(mesh)
     }
 
-    report(input, 'attaching-scan', 'Attaching the scan with rigid placement only; scale is locked and local face vertices are untouched.')
+    report(input, 'attaching-scan', 'Attaching the head mesh with rigid placement; its local vertices are preserved.')
     const scanRoot = new Group()
     scanRoot.name = 'FaceScanRoot'
     scanRoot.add(scanScene)
@@ -216,7 +217,7 @@ export async function generatePersonalAvatar(input: GenerateAvatarInput): Promis
     if (!(exported instanceof ArrayBuffer)) throw new Error('GLB export did not return a binary buffer.')
     throwIfAborted(input.signal)
 
-    report(input, 'verifying-face-lock', 'Re-importing the GLB and hashing every face vertex.')
+    report(input, 'verifying-face-lock', 'Re-importing the GLB and verifying the head mesh geometry.')
     const roundTrip = await new GLTFLoader().setMeshoptDecoder(MeshoptDecoder).parseAsync(exported, '')
     reimported = roundTrip.scene
     const faceAfter = await fingerprintScanMeshes(reimported, FACE_SCAN_PREFIX)
@@ -233,7 +234,7 @@ export async function generatePersonalAvatar(input: GenerateAvatarInput): Promis
       bodyFit: {
         target: input.measurements,
         achieved,
-        note: 'Body circumference/height values are measurement-guided estimates from the imported base mesh, not tailoring-grade body reconstruction. The supplied face scan vertices are preserved exactly.',
+        note: 'Body circumference/height values are measurement-guided estimates from the imported base mesh, not tailoring-grade body reconstruction. The head mesh is either an imported scan or a single-photo 2.5D approximation; unseen depth and profile are estimated.',
       },
       alignment: input.alignment,
       exportBytes: exported.byteLength,
@@ -248,7 +249,7 @@ export async function generatePersonalAvatar(input: GenerateAvatarInput): Promis
       report: personalizationReport,
       source: {
         id: `custom-${exportSha256.slice(0, 16)}`,
-        label: 'My exact-face avatar',
+        label: input.photoGeneratedHead ? 'My photo-based avatar' : 'My scanned avatar',
         kind: 'custom',
         url: blobUrl,
         format: 'glb',

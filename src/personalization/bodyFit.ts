@@ -81,7 +81,7 @@ export interface BodyFitOptions {
   baseCircumferences: { chest: number; waist: number; hips: number }
 }
 
-/** Measurement-guided vertex fit for the imported body only. The face scan is never passed here. */
+/** Measurement-guided vertex fit for the imported body only. The head mesh is never passed here. */
 export function fitBodyGeometry(source: BufferGeometry, options: BodyFitOptions): BufferGeometry {
   const { measurements, landmarks, baseCircumferences } = options
   const heightMapper = makeHeightMapper(landmarks, measurements, options.scanHeightMeters)

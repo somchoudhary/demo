@@ -1,8 +1,8 @@
-# FitVision AI — Phase 2: Local Exact-Face Avatar Studio
+# FitVision AI — Phase 2: Local Photo-Based Avatar Studio
 
-A small, testable React + TypeScript studio built on the Phase 1 realistic human-avatar foundation. Phase 2 adds the user-selected personalization workflow: **upload a 3D head scan + body measurements, generate a personal GLB locally, preview it in the same viewer, and download it**.
+A React + TypeScript studio built on the Phase 1 human-avatar foundation. The personalization flow accepts a face photo or an optional 3D head scan, plus body measurements. The assembled model is generated locally and displayed inside the studio; the app does not offer a generated-model download.
 
-An optional reference photo can be attached, but it is **not** used to reconstruct or deform the face. Exact face preservation requires supplied 3D scan geometry; a single ordinary photo is not treated as an exact-face input.
+**Photo-only mode creates a textured 2.5D head proxy, not an accurate 3D face reconstruction.** A single image cannot reveal the person’s true side profile, facial depth, ears hidden from view, or back of the head. Those unseen regions are estimated with generic geometry. For stronger likeness and real head shape, supply a proper 3D head scan or use a multi-view reconstruction service (not included in this local-only build).
 
 ## Run it
 
@@ -31,33 +31,34 @@ UI entry points: **Create avatar** in the header, or **Create your avatar** in t
 
 Inputs:
 
-- **Required:** self-contained `.glb` / `.gltf` head/neck scan, Y-up, meters, static mesh, trimmed near the neck
+- **Required:** PNG/JPEG/WebP face photo when no scan is supplied (minimum 320 × 320 px)
+- **Optional:** self-contained `.glb` / `.gltf` head/neck scan, Y-up, meters, static mesh, trimmed near the neck; this takes priority over photo-based head generation
 - **Required:** height, chest, waist, hips, inseam and shoulder width in centimeters
-- **Optional:** PNG/JPEG/WebP reference photo, stored only as a local reference and report entry
+- **Optional:** PNG/JPEG/WebP photo alongside a scan; stored locally as a reference
 - **Optional:** rigid scan placement offsets/rotation; scale is locked at 100%
 
 Local pipeline (`src/personalization/`):
 
-1. Read files in the browser; no upload to a reconstruction service.
-2. Load the licensed local base human through the existing avatar repository.
-3. Validate the scan and reject external resource URLs, skinned/morphing scans, invalid bounds and non-glTF files.
+1. Read the photo/scan in the browser; no upload to a reconstruction service.
+2. If no scan is supplied, create a generic ellipsoid head proxy with the photo projected onto its front surface.
+3. Load the licensed local base human and validate the selected head mesh.
 4. Bake the imported body/clothing into static geometry, clip the base head/neck region, and fit only the body to the measurements.
-5. Attach the supplied scan with rigid placement only. Individual face vertices are never edited.
-6. Export a GLB locally with `GLTFExporter`.
-7. Re-import the exported GLB and hash every scan mesh’s local positions and indices.
-8. Return the personalized avatar only if the face-lock proof passes; otherwise show the actual error.
+5. Attach the generated or imported head with rigid placement only. Head vertices are not changed during assembly.
+6. Export an internal GLB in memory for the in-app viewer; no generated-model download is exposed.
+7. Re-import the internal GLB and hash the head mesh positions and indices.
+8. Return the personalized avatar only if the geometry round-trip check passes; otherwise show the actual error.
 
-The generated model is previewed through the existing `AvatarViewer` as a custom `AvatarSource` blob URL with integrity metadata. The UI offers **Download GLB** and a JSON face-lock report.
+The generated model is previewed through the existing `AvatarViewer` as a custom `AvatarSource` blob URL with integrity metadata. The generated model is shown directly in the in-app viewer. No generated GLB download or export button is provided.
 
-### Face-lock proof
+### Head-mesh integrity check
 
-`src/personalization/faceLock.ts` fingerprints canonical local scan geometry before export and after GLB round trip. The proof records:
+`src/personalization/faceLock.ts` fingerprints canonical local head geometry before export and after the internal GLB round trip. The proof records:
 
 - scan mesh count, vertex count and triangle count
 - combined position/index SHA-256 hashes
 - `maxLocalVertexDeltaMeters: 0` only when the round-trip hashes match
 
-This guarantees the supplied scan’s local face geometry was not changed by assembly/export. It does not claim photo-based likeness, and it does not make the body fit tailoring-grade.
+This only verifies that the selected head mesh was not changed during assembly/export. It does not measure identity similarity or prove that a photo-derived head resembles the person accurately. For photo-only mode, the proxy geometry is generic and the texture is a centered square crop; there is no facial landmark detection or true depth reconstruction.
 
 ### Demo scan
 
@@ -134,7 +135,8 @@ The normal-load and personalization browser tests assert empty console error lis
 
 ## Honest limitations
 
-- Exact face preservation applies to the supplied 3D scan geometry, not to a single photo.
+- A single photo cannot produce accurate full 3D facial geometry; photo-only mode is a textured 2.5D approximation.
+- The photo crop is centered and square; automatic face detection/landmark alignment is not implemented.
 - Body fitting is measurement-guided deformation of the imported base body, not medical/tailoring-grade reconstruction.
 - The generated GLB is a static assembled avatar, not a newly rigged animation character.
 - No clothing catalogue, clothing switching, cart, payments or virtual try-on is implemented yet.

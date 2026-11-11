@@ -271,7 +271,7 @@ h1 { font-family: var(--display); font-size: clamp(29px, 3vw, 36px); line-height
   .spin, .loading-track.indeterminate i { animation-duration: 2.5s; }
 }
 
-/* Phase 02 · local exact-face personalization */
+/* Phase 02 · local photo-based personalization */
 .personalization-dialog { width: min(780px, calc(100vw - 36px)); }
 .personalization-form { display: flex; flex-direction: column; gap: 18px; }
 .upload-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }

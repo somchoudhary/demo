@@ -7,7 +7,6 @@ import {
   Check,
   ChevronDown,
   CircleCheck,
-  Download,
   FileText,
   HardDrive,
   Layers3,
@@ -74,11 +73,11 @@ function ModelSidebar({ state, generated, onOpenAsset, onOpenPersonalization, on
         <div className="panel-eyebrow"><span>ACTIVE AVATAR</span><span className={`status-pill ${state.status}`}><i />{statusLabel}</span></div>
         <div className="avatar-identity">
           <div className="avatar-symbol"><ScanFace size={27} strokeWidth={1.45} /></div>
-          <div><h2>{custom ? 'My exact-face avatar' : 'Base avatar 01'}</h2><p>{custom ? 'Local scan + measurement fit' : 'MPFB · Human reference'}</p></div>
+          <div><h2>{custom ? 'My personalized avatar' : 'Base avatar 01'}</h2><p>{custom ? 'Personalized 3D model' : 'MPFB · Human reference'}</p></div>
         </div>
         <div className="identity-tags">
           {custom ? (
-            <><span><LockKeyhole size={12} /> Face locked</span><span><Box size={12} /> Local GLB</span></>
+            <><span><LockKeyhole size={12} /> Head mesh preserved</span><span><Box size={12} /> In-studio model</span></>
           ) : (
             <><span><Box size={12} /> Real human mesh</span><span><Move3d size={12} /> Rigged</span></>
           )}
@@ -89,7 +88,7 @@ function ModelSidebar({ state, generated, onOpenAsset, onOpenPersonalization, on
           <div><dt>Geometry</dt><dd>{diagnostics ? `${diagnostics.triangleCount.toLocaleString()} triangles` : 'Reading asset…'}</dd></div>
           <div><dt>Skeleton</dt><dd>{custom ? 'Static assembly' : diagnostics ? `${diagnostics.jointCount} joints` : '—'}</dd></div>
           <div><dt>Textures</dt><dd>{diagnostics ? `${diagnostics.loadedTextureCount} / ${diagnostics.textureCount} loaded` : '—'}</dd></div>
-          <div><dt>Materials</dt><dd>{custom ? 'Scan + base PBR' : 'Author-textured PBR'}</dd></div>
+          <div><dt>Materials</dt><dd>{custom ? 'Head + base PBR' : 'Author-textured PBR'}</dd></div>
           <div><dt>Asset size</dt><dd>{diagnostics ? `${(diagnostics.bytes / 1024 / 1024).toFixed(2)} MB` : '—'}</dd></div>
         </dl>
         <details className="diagnostics">
@@ -102,9 +101,9 @@ function ModelSidebar({ state, generated, onOpenAsset, onOpenPersonalization, on
                 <div className="diagnostic-line"><CircleCheck size={14} /><span>Bounds: {diagnostics.dimensionsMeters.height.toFixed(2)} m tall</span></div>
                 {custom && generated ? (
                   <>
-                    <div className="diagnostic-line"><CircleCheck size={14} /><span>Face lock verified after GLB round trip · {generated.report.faceLock.vertexCount.toLocaleString()} scan vertices</span></div>
-                    <div className="diagnostic-line"><CircleCheck size={14} /><span>Local face vertex delta: 0 m</span></div>
-                    <p>The head scan is attached with placement only. Body measurements are a guided fit of the imported base mesh, not a medical or tailoring-grade reconstruction.</p>
+                    <div className="diagnostic-line"><CircleCheck size={14} /><span>Head mesh round-trip verified · {generated.report.faceLock.vertexCount.toLocaleString()} vertices</span></div>
+                    <div className="diagnostic-line"><CircleCheck size={14} /><span>Local head vertex delta: 0 m</span></div>
+                    <p>The generated or imported head mesh is attached with placement only. Body measurements are a guided fit of the base mesh, not a medical or tailoring-grade reconstruction.</p>
                   </>
                 ) : (
                   <>
@@ -122,10 +121,9 @@ function ModelSidebar({ state, generated, onOpenAsset, onOpenPersonalization, on
       {generated ? (
         <section className="panel foundation-panel generation-panel">
           <div className="foundation-icon"><LockKeyhole size={20} strokeWidth={1.6} /></div>
-          <h2>Face structure preserved.</h2>
-          <p>Your scan was hashed before export and again after re-importing the generated GLB. The body was fitted locally to your measurements.</p>
+          <h2>Your model is ready.</h2>
+          <p>Your personalized 3D model is displayed directly in the studio. The body is fitted locally to your measurements.</p>
           <div className="generation-actions">
-            <a className="button button-secondary" href={generated.blobUrl} download={generated.fileName}><Download size={14} /> Download GLB</a>
             <button className="button button-secondary" onClick={onOpenPersonalization}>New avatar</button>
             <button className="text-link" onClick={onReset}>Use base avatar</button>
           </div>
@@ -135,9 +133,9 @@ function ModelSidebar({ state, generated, onOpenAsset, onOpenPersonalization, on
         <section className="panel foundation-panel">
           <div className="foundation-icon"><Layers3 size={20} strokeWidth={1.6} /></div>
           <h2>Make it yours.</h2>
-          <p>Upload a 3D head scan and your measurements. The scan’s face vertices are preserved exactly; the imported body is fitted locally. A photo can be kept as reference only.</p>
+          <p>Upload a face photo or optional 3D head scan, then enter your measurements. A single photo creates a textured 2.5D head approximation; an imported scan provides actual head geometry.</p>
           <button className="button button-primary personalize-button" onClick={onOpenPersonalization}><ScanFace size={15} /> Create your avatar</button>
-          <div className="foundation-footer"><span className="tiny-dot" /> Exact face requires a 3D scan, not a single photo</div>
+          <div className="foundation-footer"><span className="tiny-dot" /> A single photo provides an approximate face, not exact 3D geometry</div>
         </section>
       )}
     </aside>
@@ -180,9 +178,9 @@ export function App() {
           <div>
             <div className="breadcrumb">Workspace <span>/</span> Avatar studio</div>
             <h1>Avatar studio<span className="heading-dot">.</span></h1>
-            <p>{generated ? 'Your supplied face scan, preserved. Your measurements, fitted locally.' : 'One real human model. Every angle, in your control.'}</p>
+            <p>{generated ? 'Your head model, preserved. Your measurements, fitted locally.' : 'One real human model. Every angle, in your control.'}</p>
           </div>
-          <div className="heading-note"><span className="note-icon"><LockKeyhole size={18} /></span><div><strong>{generated ? 'Face lock verified' : 'Exact-face workflow'}</strong><span>{generated ? 'Scan vertices unchanged after export' : 'Scan + measurements, locally'}</span></div></div>
+          <div className="heading-note"><span className="note-icon"><LockKeyhole size={18} /></span><div><strong>{generated ? 'Head geometry preserved' : 'Photo-based avatar workflow'}</strong><span>{generated ? 'Head mesh preserved during generation' : 'Photo or scan + measurements, locally'}</span></div></div>
         </div>
 
         <div className="studio-layout">
@@ -191,13 +189,13 @@ export function App() {
         </div>
 
         <section className="trust-strip" aria-label="Personalization guarantees">
-          <div><span className="trust-icon"><Check size={16} /></span><div><strong>Exact supplied face</strong><span>Scan vertices hash-verified after export</span></div></div>
+          <div><span className="trust-icon"><Check size={16} /></span><div><strong>Head mesh integrity</strong><span>Imported or generated head geometry preserved</span></div></div>
           <div><span className="trust-icon"><HardDrive size={17} /></span><div><strong>Local processing</strong><span>No reconstruction upload or provider</span></div></div>
           <div><span className="trust-icon"><ShieldCheck size={17} /></span><div><strong>Openly licensed base</strong><span>CC0 asset with verified provenance</span></div></div>
         </section>
       </main>
 
-      <footer className="site-footer"><span>FitVision AI <b>·</b> Exact-face avatar studio</span><span>Phase 02 <b>—</b> Scan + measurements</span></footer>
+      <footer className="site-footer"><span>FitVision AI <b>·</b> Personalized 3D avatar studio</span><span>Phase 02 <b>—</b> Photo/scan + measurements</span></footer>
       <AssetDialog dialogRef={dialog} onClose={closeAsset} diagnostics={generated ? undefined : diagnostics} />
       <PersonalizationDialog key={personalizationKey} dialogRef={personalizationDialog} onClose={closePersonalization} onGenerated={setGenerated} />
     </div>

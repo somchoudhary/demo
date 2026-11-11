@@ -31,7 +31,7 @@ export interface FaceLockProof {
   triangleCount: number
   positionSha256: string
   indexSha256: string
-  /** Local scan vertices are never edited; only parent node placement may change. */
+  /** Local head vertices are never edited after generation; only parent node placement may change. */
   maxLocalVertexDeltaMeters: number
 }
 
@@ -53,7 +53,7 @@ export interface PersonalizationReport {
   localOnly: true
   scanFileName: string
   scanSha256: string
-  referencePhoto?: { fileName: string; sha256: string; usedForGeometry: false }
+  referencePhoto?: { fileName: string; sha256: string; usedForGeometry: boolean }
   faceLock: FaceLockProof
   bodyFit: BodyFitReport
   alignment: ScanAlignment
