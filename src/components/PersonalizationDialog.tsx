@@ -60,7 +60,7 @@ export function PersonalizationDialog({ dialogRef, onClose, onGenerated }: Props
     event.preventDefault()
     setError(null)
     if (!scanFile && (!frontPhoto || !sidePhoto)) {
-      setError('Upload both a front-facing photo and a side-profile photo. A true two-view reconstruction model must be installed before photo-only generation can run; this build will not fake a fitted face with a photo-textured sphere.')
+      setError('Upload both a front-facing photo and a side-profile photo, or import a 3D head scan instead.')
       return
     }
     const measurementErrors = validateMeasurements(measurements)
@@ -73,12 +73,11 @@ export function PersonalizationDialog({ dialogRef, onClose, onGenerated }: Props
     setProgress({ stage: 'reading-inputs', message: 'Starting local generation…' })
     controller.current = new AbortController()
     try {
-      if (!scanFile) {
-        throw new Error('Both photos were received, but the local 3D face-reconstruction engine is not bundled in this project yet. I have intentionally disabled the old pasted-photo head so it cannot be mistaken for a realistic reconstruction. Import a fitted head scan for now, or add a licensed local reconstruction engine to enable photo-only generation.')
-      }
       const avatar = await generatePersonalAvatar({
         scanFile,
         referencePhoto: frontPhoto,
+        sidePhoto,
+        photoGeneratedHead: !scanFile,
         measurements,
         alignment,
         signal: controller.current.signal,
@@ -124,19 +123,21 @@ export function PersonalizationDialog({ dialogRef, onClose, onGenerated }: Props
       <p className="eyebrow">LOCAL · PHOTO-BASED AVATAR</p>
       <h2 id="personalization-title">Create your own avatar</h2>
       <p className="dialog-intro">
-        Upload front and side photos for the intended two-view face reconstruction workflow, or import an existing 3D head scan. Body proportions are adjusted using your measurements. Processing stays in this browser.
+        Upload front and side photos to reconstruct your head locally, or import an existing 3D head scan. Body proportions are adjusted using your measurements. Processing stays in this browser.
       </p>
 
       {result ? (
         <div className="generation-success" role="status">
           <div className="success-badge"><LockKeyhole size={18} /> Head geometry preserved</div>
           <p>
-            Your 3D model has been generated and is ready to view in the studio. The generated head mesh was preserved during assembly. The imported scan supplies the head geometry; uploaded photos are references only.
+            Your 3D model has been generated and is ready to view in the studio. The generated head mesh was preserved during assembly. {result.report.sidePhoto?.usedForGeometry
+              ? 'The head was reconstructed locally from your front and side photos.'
+              : 'The imported scan supplies the head geometry; uploaded photos are references only.'}
           </p>
           <dl className="asset-facts">
             <div><dt>Head source</dt><dd>{result.report.scanFileName}</dd></div>
             <div><dt>Head meshes</dt><dd>{result.report.faceLock.meshCount} · {result.report.faceLock.vertexCount.toLocaleString()} vertices</dd></div>
-            <div><dt>Photo input</dt><dd>{result.report.referencePhoto ? 'Front view stored as reference' : 'Not supplied'}</dd></div>
+            <div><dt>Photo input</dt><dd>{result.report.sidePhoto?.usedForGeometry ? 'Front + side views reconstructed the head' : result.report.referencePhoto ? 'Front view stored as reference' : 'Not supplied'}</dd></div>
           </dl>
           <div className="checksum-block"><span>HEAD MESH POSITION SHA-256</span><code>{result.report.faceLock.positionSha256}</code></div>
           <div className="dialog-actions">
@@ -166,7 +167,7 @@ export function PersonalizationDialog({ dialogRef, onClose, onGenerated }: Props
               <span>{sidePhoto ? sidePhoto.name : 'True 90° profile; show forehead, nose, lips and chin'}</span>
             </label>
           </div>
-          <p className="sample-link">Use two separate, sharp images of the same person: one straight-on and one exact side profile. Keep hair away from the face, use even lighting, and avoid filters. Photo-only reconstruction remains disabled until a compatible, properly licensed local model is installed; the old sphere-based photo trick has been removed from the generation path.</p>
+          <p className="sample-link">Use two separate, sharp images of the same person: one straight-on and one exact side profile. Keep hair away from the face, use even lighting, and avoid filters. The front photo builds the face geometry and texture while the side profile refines depth; an imported scan takes priority over photos when both are supplied.</p>
 
           <fieldset disabled={busy}>
             <legend>Body measurements <span>centimeters</span></legend>
@@ -210,7 +211,7 @@ export function PersonalizationDialog({ dialogRef, onClose, onGenerated }: Props
             <p>These controls move/orient the generated or imported head as a whole. They do not reconstruct missing facial depth.</p>
           </details>
 
-          <div className="privacy-note"><ShieldCheck size={16} /><span>Local-only workflow. Both photos remain in this browser. A genuine two-view reconstruction engine is not bundled yet, so photo-only generation is deliberately blocked rather than producing a misleading pasted-on head.</span></div>
+          <div className="privacy-note"><ShieldCheck size={16} /><span>Local-only workflow. Both photos remain in this browser; face detection and 3D head reconstruction run entirely on your device.</span></div>
 
           {error && <div className="form-error" role="alert"><TriangleAlert size={16} /><span>{error}</span></div>}
           {progress && <div className="generation-progress" role="status"><LoaderCircle size={16} className="spin" /><span>{progress.message}</span></div>}
@@ -218,7 +219,7 @@ export function PersonalizationDialog({ dialogRef, onClose, onGenerated }: Props
           <div className="dialog-actions">
             <button className="button button-primary" type="submit" disabled={busy || (!scanFile && (!frontPhoto || !sidePhoto))}>
               {busy ? <LoaderCircle size={15} className="spin" /> : <LockKeyhole size={15} />}
-              {busy ? 'Generating locally…' : scanFile ? 'Generate 3D avatar' : 'Photo engine not installed'}
+              {busy ? 'Generating locally…' : scanFile ? 'Generate 3D avatar' : 'Generate from photos'}
             </button>
             <a className="text-link" href="/samples/README.txt" target="_blank" rel="noreferrer">Sample provenance <ArrowUpRight size={13} /></a>
           </div>

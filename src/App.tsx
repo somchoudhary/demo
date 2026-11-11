@@ -7,6 +7,7 @@ import {
   Check,
   ChevronDown,
   CircleCheck,
+  Download,
   FileText,
   HardDrive,
   Layers3,
@@ -53,6 +54,29 @@ function AssetDialog({ dialogRef, onClose, diagnostics }: { dialogRef: RefObject
       </div>
     </dialog>
   )
+}
+
+/** Measurements companion file for the clothing fit-check flow: pair it with the GLB elsewhere. */
+function downloadMeasurementsJson(generated: GeneratedAvatar): void {
+  const payload = {
+    exportedAt: generated.report.createdAt,
+    source: 'FitVision AI local avatar studio',
+    units: 'cm',
+    targetMeasurements: generated.report.bodyFit.target,
+    achievedMeasurements: generated.report.bodyFit.achieved,
+    fitNote: generated.report.bodyFit.note,
+    headSource: generated.report.scanFileName,
+    avatarFile: generated.fileName,
+    avatarSha256: generated.report.exportSha256,
+  }
+  const url = URL.createObjectURL(new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' }))
+  const anchor = document.createElement('a')
+  anchor.href = url
+  anchor.download = generated.fileName.replace(/\.glb$/, '-measurements.json')
+  document.body.appendChild(anchor)
+  anchor.click()
+  anchor.remove()
+  setTimeout(() => URL.revokeObjectURL(url), 1000)
 }
 
 function ModelSidebar({ state, generated, onOpenAsset, onOpenPersonalization, onReset }: {
@@ -122,7 +146,11 @@ function ModelSidebar({ state, generated, onOpenAsset, onOpenPersonalization, on
         <section className="panel foundation-panel generation-panel">
           <div className="foundation-icon"><LockKeyhole size={20} strokeWidth={1.6} /></div>
           <h2>Your model is ready.</h2>
-          <p>Your personalized 3D model is displayed directly in the studio. The body is fitted locally to your measurements.</p>
+          <p>Your personalized 3D model is displayed directly in the studio. Download it with its measurements to try clothes on it in any tool that opens GLB files.</p>
+          <div className="generation-actions">
+            <a className="button button-primary" href={generated.blobUrl} download={generated.fileName}><Download size={15} /> Download GLB</a>
+            <button className="button button-secondary" onClick={() => downloadMeasurementsJson(generated)}><FileText size={15} /> Measurements JSON</button>
+          </div>
           <div className="generation-actions">
             <button className="button button-secondary" onClick={onOpenPersonalization}>New avatar</button>
             <button className="text-link" onClick={onReset}>Use base avatar</button>
@@ -133,9 +161,9 @@ function ModelSidebar({ state, generated, onOpenAsset, onOpenPersonalization, on
         <section className="panel foundation-panel">
           <div className="foundation-icon"><Layers3 size={20} strokeWidth={1.6} /></div>
           <h2>Make it yours.</h2>
-          <p>Upload a face photo or optional 3D head scan, then enter your measurements. A single photo creates a textured 2.5D head approximation; an imported scan provides actual head geometry.</p>
+          <p>Upload front and side photos, or an optional 3D head scan, then enter your measurements. The head is reconstructed locally from both views; an imported scan provides actual head geometry.</p>
           <button className="button button-primary personalize-button" onClick={onOpenPersonalization}><ScanFace size={15} /> Create your avatar</button>
-          <div className="foundation-footer"><span className="tiny-dot" /> A single photo provides an approximate face, not exact 3D geometry</div>
+          <div className="foundation-footer"><span className="tiny-dot" /> Two photos + measurements, processed locally</div>
         </section>
       )}
     </aside>

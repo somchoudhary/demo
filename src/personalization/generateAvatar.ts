@@ -19,11 +19,18 @@ import { estimateCrossSection, fitBodyGeometry, makeHeightMapper, measureAchieve
 import type { BodyLandmarks } from './bodyFit'
 import { FACE_SCAN_PREFIX, fingerprintScanMeshes, proveFaceLock } from './faceLock'
 import { validateAlignment, validateMeasurements } from './measurements'
+import { detectFace } from './faceEngine'
+import { buildHeadGroup, computeProfileDepthRatio } from './headReconstruction'
+import { loadPhotoCanvas, validatePhotoFile } from './photoInput'
 import type { BodyMeasurements, GeneratedAvatar, GenerationProgress, PersonalizationReport, ScanAlignment } from './types'
 
 export interface GenerateAvatarInput {
-  scanFile: File
+  /** Optional imported head scan. When omitted, the head is reconstructed locally from both photos. */
+  scanFile?: File | null
+  /** Front-facing photo: reference alongside a scan, geometry source for photo-only generation. */
   referencePhoto?: File | null
+  /** Side-profile photo: required for photo-only generation (profile depth refinement). */
+  sidePhoto?: File | null
   photoGeneratedHead?: boolean
   measurements: BodyMeasurements
   alignment: ScanAlignment
@@ -32,7 +39,7 @@ export interface GenerateAvatarInput {
 }
 
 const MAX_SCAN_BYTES = 80 * 1024 * 1024
-const MAX_PHOTO_BYTES = 15 * 1024 * 1024
+const PHOTO_HEAD_ENGINE = 'fitvision-local-face-engine/v1(face_mesh@0.4.1633559619)'
 
 function report(input: GenerateAvatarInput, stage: GenerationProgress['stage'], message: string): void {
   input.onProgress?.({ stage, message })
@@ -57,67 +64,114 @@ function requireValue(value: number | null | undefined, fallback: number): numbe
   return value
 }
 
+/** Provenance hash for a photo-reconstructed head: both photo bytes + the engine tag. */
+function concatForHash(front: ArrayBuffer, side: ArrayBuffer): ArrayBuffer {
+  const tag = new TextEncoder().encode(PHOTO_HEAD_ENGINE)
+  const combined = new Uint8Array(front.byteLength + side.byteLength + tag.byteLength)
+  combined.set(new Uint8Array(front), 0)
+  combined.set(new Uint8Array(side), front.byteLength)
+  combined.set(tag, front.byteLength + side.byteLength)
+  return combined.buffer
+}
+
 export async function generatePersonalAvatar(input: GenerateAvatarInput): Promise<GeneratedAvatar> {
   const measurementErrors = validateMeasurements(input.measurements)
   if (measurementErrors.length) throw new Error(measurementErrors.join(' '))
   const alignmentErrors = validateAlignment(input.alignment)
   if (alignmentErrors.length) throw new Error(alignmentErrors.join(' '))
-  if (!input.scanFile) throw new Error('A head model could not be generated from the supplied photo.')
-  if (input.scanFile.size > MAX_SCAN_BYTES) throw new Error('Head scan is larger than 80 MB. Export a decimated GLB and try again.')
-  const lowerName = input.scanFile.name.toLowerCase()
-  if (!lowerName.endsWith('.glb') && !lowerName.endsWith('.gltf')) throw new Error('Head scan must be a self-contained .glb or .gltf file.')
-  if (input.referencePhoto) {
-    if (input.referencePhoto.size > MAX_PHOTO_BYTES) throw new Error('Reference photo is larger than 15 MB.')
-    if (!/^image\/(png|jpeg|webp)$/.test(input.referencePhoto.type)) throw new Error('Reference photo must be PNG, JPEG or WebP.')
+  const usePhotoHead = !input.scanFile
+  if (input.scanFile) {
+    if (input.scanFile.size > MAX_SCAN_BYTES) throw new Error('Head scan is larger than 80 MB. Export a decimated GLB and try again.')
+    const lowerName = input.scanFile.name.toLowerCase()
+    if (!lowerName.endsWith('.glb') && !lowerName.endsWith('.gltf')) throw new Error('Head scan must be a self-contained .glb or .gltf file.')
+  } else {
+    if (!input.referencePhoto || !input.sidePhoto) {
+      throw new Error('Photo-only generation needs both a front-facing photo and a side-profile photo.')
+    }
   }
+  if (input.referencePhoto) validatePhotoFile(input.referencePhoto, 'Front photo')
+  if (input.sidePhoto) validatePhotoFile(input.sidePhoto, 'Side photo')
 
   let base: LoadedAvatar | undefined
   let scanScene: Group | undefined
   let assembled: Group | undefined
   let reimported: Group | undefined
   const bakedGeometries: ReturnType<typeof bakeMesh>[] = []
+  const scanSceneMeshes: Mesh[] = []
 
   try {
     report(input, 'reading-inputs', 'Reading files locally. Nothing is uploaded.')
     throwIfAborted(input.signal)
-    const scanBuffer = await input.scanFile.arrayBuffer()
-    const scanSha256 = await sha256Hex(scanBuffer)
+    const scanBuffer = input.scanFile ? await input.scanFile.arrayBuffer() : undefined
+    const frontPhotoBuffer = input.referencePhoto ? await input.referencePhoto.arrayBuffer() : undefined
+    const sidePhotoBuffer = input.sidePhoto ? await input.sidePhoto.arrayBuffer() : undefined
     let referencePhoto: PersonalizationReport['referencePhoto']
-    if (input.referencePhoto) {
-      const photoBuffer = await input.referencePhoto.arrayBuffer()
-      referencePhoto = { fileName: input.referencePhoto.name, sha256: await sha256Hex(photoBuffer), usedForGeometry: Boolean(input.photoGeneratedHead) }
+    if (input.referencePhoto && frontPhotoBuffer) {
+      referencePhoto = { fileName: input.referencePhoto.name, sha256: await sha256Hex(frontPhotoBuffer), usedForGeometry: usePhotoHead }
+    }
+    let sidePhoto: PersonalizationReport['sidePhoto']
+    if (input.sidePhoto && sidePhotoBuffer) {
+      sidePhoto = { fileName: input.sidePhoto.name, sha256: await sha256Hex(sidePhotoBuffer), usedForGeometry: usePhotoHead }
     }
 
     report(input, 'loading-base', 'Loading the licensed base human.')
     base = await avatarRepository.load(BASE_AVATAR, { signal: input.signal })
     throwIfAborted(input.signal)
 
-    report(input, 'validating-scan', 'Validating the imported or photo-generated head mesh.')
-    const localOnlyManager = new LoadingManager()
-    localOnlyManager.setURLModifier((url) => {
-      if (url.startsWith('data:') || url.startsWith('blob:')) return url
-      throw new Error('Head scan must be self-contained. External texture/buffer URLs are not loaded during local generation.')
-    })
-    const loader = new GLTFLoader(localOnlyManager).setMeshoptDecoder(MeshoptDecoder)
-    const scanGltf = lowerName.endsWith('.gltf')
-      ? await loader.parseAsync(new TextDecoder().decode(scanBuffer), '')
-      : await loader.parseAsync(scanBuffer, '')
-    scanScene = scanGltf.scene
-    const scanMeshes: Mesh[] = []
-    scanScene.traverse((object) => {
-      if (object instanceof Mesh) scanMeshes.push(object)
-    })
-    if (!scanMeshes.length) throw new Error('The head scan contains no renderable mesh.')
-    for (const mesh of scanMeshes) {
-      if (mesh instanceof SkinnedMesh) throw new Error('The head scan must be a static mesh, not a skinned/rigged character.')
-      if (Array.isArray(mesh.material) && mesh.material.length > 1) throw new Error('Please export the head scan with one material per mesh.')
-      if (Object.keys(mesh.geometry.morphAttributes).length > 0) throw new Error('Please export a static head scan without morph targets so the face cannot change.')
+    let headFileName: string
+    let headSha256: string
+    if (input.scanFile && scanBuffer) {
+      report(input, 'validating-scan', 'Validating the imported head scan.')
+      const localOnlyManager = new LoadingManager()
+      localOnlyManager.setURLModifier((url) => {
+        if (url.startsWith('data:') || url.startsWith('blob:')) return url
+        throw new Error('Head scan must be self-contained. External texture/buffer URLs are not loaded during local generation.')
+      })
+      const loader = new GLTFLoader(localOnlyManager).setMeshoptDecoder(MeshoptDecoder)
+      const scanGltf = input.scanFile.name.toLowerCase().endsWith('.gltf')
+        ? await loader.parseAsync(new TextDecoder().decode(scanBuffer), '')
+        : await loader.parseAsync(scanBuffer, '')
+      scanScene = scanGltf.scene
+      scanScene.traverse((object) => {
+        if (object instanceof Mesh) scanSceneMeshes.push(object)
+      })
+      if (!scanSceneMeshes.length) throw new Error('The head scan contains no renderable mesh.')
+      scanSceneMeshes.forEach((mesh, index) => { mesh.name = `${FACE_SCAN_PREFIX}${index}` })
+      headFileName = input.scanFile.name
+      headSha256 = await sha256Hex(scanBuffer)
+    } else {
+      if (!input.referencePhoto || !input.sidePhoto || !frontPhotoBuffer || !sidePhotoBuffer) {
+        throw new Error('Photo-only generation needs both a front-facing photo and a side-profile photo.')
+      }
+      report(input, 'detecting-face', 'Detecting the face in both photos with the local engine.')
+      const frontCanvas = await loadPhotoCanvas(input.referencePhoto, 'Front photo')
+      throwIfAborted(input.signal)
+      const sideCanvas = await loadPhotoCanvas(input.sidePhoto, 'Side photo')
+      throwIfAborted(input.signal)
+      const frontFace = await detectFace(frontCanvas, 'front', input.signal)
+      throwIfAborted(input.signal)
+      const sideFace = await detectFace(sideCanvas, 'side-profile', input.signal)
+      throwIfAborted(input.signal)
+      report(input, 'reconstructing-head', 'Reconstructing the 3D head from the front and side views.')
+      const depthScale = computeProfileDepthRatio(frontFace, sideFace)
+      scanScene = buildHeadGroup(frontFace, frontCanvas, { heightCm: input.measurements.heightCm, depthScale })
+      scanScene.updateMatrixWorld(true)
+      scanScene.traverse((object) => {
+        if (object instanceof Mesh) scanSceneMeshes.push(object)
+      })
+      headFileName = `photo-reconstruction(${input.referencePhoto.name} + ${input.sidePhoto.name})`
+      headSha256 = await sha256Hex(concatForHash(frontPhotoBuffer, sidePhotoBuffer))
     }
-    scanMeshes.forEach((mesh, index) => { mesh.name = `${FACE_SCAN_PREFIX}${index}` })
+    if (!scanSceneMeshes.length) throw new Error('The head model contains no renderable mesh.')
+    for (const mesh of scanSceneMeshes) {
+      if (mesh instanceof SkinnedMesh) throw new Error('The head model must be a static mesh, not a skinned/rigged character.')
+      if (Array.isArray(mesh.material) && mesh.material.length > 1) throw new Error('Please export the head model with one material per mesh.')
+      if (Object.keys(mesh.geometry.morphAttributes).length > 0) throw new Error('Please use a static head model without morph targets so the face cannot change.')
+    }
     const scanBounds = new Box3().setFromObject(scanScene)
     const scanSize = scanBounds.getSize(new Vector3())
-    if (![scanSize.x, scanSize.y, scanSize.z].every((value) => Number.isFinite(value) && value > 0)) throw new Error('Head scan bounds are invalid.')
-    if (scanSize.y < 0.08 || scanSize.y > 0.8) throw new Error(`Head scan height is ${scanSize.y.toFixed(3)} m. Export a Y-up scan in meters, trimmed at the neck (expected roughly 0.12–0.60 m).`)
+    if (![scanSize.x, scanSize.y, scanSize.z].every((value) => Number.isFinite(value) && value > 0)) throw new Error('Head model bounds are invalid.')
+    if (scanSize.y < 0.08 || scanSize.y > 0.8) throw new Error(`Head model height is ${scanSize.y.toFixed(3)} m (expected roughly 0.12–0.60 m).`)
     const faceBefore = await fingerprintScanMeshes(scanScene, FACE_SCAN_PREFIX)
     throwIfAborted(input.signal)
 
@@ -227,14 +281,17 @@ export async function generatePersonalAvatar(input: GenerateAvatarInput): Promis
     const personalizationReport: PersonalizationReport = {
       createdAt,
       localOnly: true,
-      scanFileName: input.scanFile.name,
-      scanSha256,
+      scanFileName: headFileName,
+      scanSha256: headSha256,
       referencePhoto,
+      sidePhoto,
       faceLock,
       bodyFit: {
         target: input.measurements,
         achieved,
-        note: 'Body circumference/height values are measurement-guided estimates from the imported base mesh, not tailoring-grade body reconstruction. The head mesh is either an imported scan or a single-photo 2.5D approximation; unseen depth and profile are estimated.',
+        note: usePhotoHead
+          ? 'Body circumference/height values are measurement-guided estimates from the imported base mesh, not tailoring-grade body reconstruction. The head is a local two-view reconstruction (front mesh + photo texture, side-refined profile); the back of the head, ears and hair are approximations.'
+          : 'Body circumference/height values are measurement-guided estimates from the imported base mesh, not tailoring-grade body reconstruction. The head geometry comes from the imported scan.',
       },
       alignment: input.alignment,
       exportBytes: exported.byteLength,
@@ -249,7 +306,7 @@ export async function generatePersonalAvatar(input: GenerateAvatarInput): Promis
       report: personalizationReport,
       source: {
         id: `custom-${exportSha256.slice(0, 16)}`,
-        label: input.photoGeneratedHead ? 'My photo-based avatar' : 'My scanned avatar',
+        label: usePhotoHead ? 'My photo-based avatar' : 'My scanned avatar',
         kind: 'custom',
         url: blobUrl,
         format: 'glb',

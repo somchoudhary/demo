@@ -54,6 +54,7 @@ export interface PersonalizationReport {
   scanFileName: string
   scanSha256: string
   referencePhoto?: { fileName: string; sha256: string; usedForGeometry: boolean }
+  sidePhoto?: { fileName: string; sha256: string; usedForGeometry: boolean }
   faceLock: FaceLockProof
   bodyFit: BodyFitReport
   alignment: ScanAlignment
@@ -73,6 +74,8 @@ export type GenerationStage =
   | 'reading-inputs'
   | 'loading-base'
   | 'validating-scan'
+  | 'detecting-face'
+  | 'reconstructing-head'
   | 'fitting-body'
   | 'attaching-scan'
   | 'exporting'
